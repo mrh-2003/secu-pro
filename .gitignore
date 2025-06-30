@@ -9,6 +9,8 @@ yarn.lock
 # Environment variables
 .env
 
+firebase-key.json
+
 # Logs
 logs
 *.log

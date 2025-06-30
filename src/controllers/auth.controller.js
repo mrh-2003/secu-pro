@@ -36,7 +36,7 @@ exports.login = async (req, res) => {
     const role = userInDB.role;
     const userId = userInDB.id_user;  
 
-    const client = ldap.createClient({ url: LDAP_URL, tlsOptions: { rejectUnauthorized: false } });
+    const client = ldap.createClient({ url: LDAP_URL });
     const userDN = `cn=${username},${BASE_DN}`; 
 
     client.bind(userDN, password, (err) => {
@@ -77,7 +77,7 @@ exports.createUser = (req, res) => {
   }
 
   const username = `${firstName} ${lastName}`;
-  const client = ldap.createClient({ url: LDAP_URL, tlsOptions: { rejectUnauthorized: false } });
+  const client = ldap.createClient({ url: LDAP_URL });
   const userDN = `cn=${username},${BASE_DN}`;
   const userId = `${firstName[0]}${lastName}`.toLowerCase();
 

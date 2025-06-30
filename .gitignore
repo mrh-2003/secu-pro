@@ -37,3 +37,4 @@ build/
 # Otros archivos temporales
 *.tmp
 *.temp
+firebase-key.json

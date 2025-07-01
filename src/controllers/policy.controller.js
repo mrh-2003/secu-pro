@@ -1,16 +1,28 @@
 const Policy = require('../models/policy.model');
-const fs = require('fs');
-const path = require('path');
-
-const uploadsDir = path.join('uploads');
+const bucket = require('../config/firebase.config');
+const { v4: uuidv4 } = require('uuid');
 
 exports.createPolicy = async (req, res) => {
   try {
     const { title, description, category, iso_clause, classification, status } = req.body;
-    const documentPath = req.file ? req.file.filename : null;
+    let documentPath = null;
 
     if (!title || !description || !category || !classification || !status) {
       return res.status(400).json({ message: 'Campos obligatorios faltantes.' });
+    }
+
+    if (req.file) {
+      const fileName = `${uuidv4()}-${req.file.originalname}`;
+      const file = bucket.file(fileName);
+
+      await file.save(req.file.buffer, {
+        metadata: {
+          contentType: req.file.mimetype,
+        },
+        public: true,
+        resumable: false
+      });
+      documentPath = file.publicUrl();
     }
 
     const newPolicy = await Policy.create({ title, description, category, iso_clause, classification, status, documentPath });
@@ -23,12 +35,12 @@ exports.createPolicy = async (req, res) => {
 
 exports.getAllPolicies = async (req, res) => {
   try {
-    const { searchTerm, categoryFilter, statusFilter, userId } = req.query;  
+    const { searchTerm, categoryFilter, statusFilter, userId } = req.query;
     let policies;
 
-    if (userId) {  
+    if (userId) {
       policies = await Policy.findPoliciesWithReadStatus(userId, searchTerm, categoryFilter, statusFilter);
-    } else {  
+    } else {
       policies = await Policy.findAll(searchTerm, categoryFilter, statusFilter);
     }
     
@@ -57,25 +69,46 @@ exports.updatePolicy = async (req, res) => {
   try {
     const { id } = req.params;
     const { title, description, category, iso_clause, classification, status } = req.body;
-    let documentPath = req.body.documentPath;  
+    let documentPath = req.body.documentPath;
+
+    const oldPolicy = await Policy.findById(id);
+
     if (req.file) {
-      const oldPolicy = await Policy.findById(id);
       if (oldPolicy && oldPolicy.document_path) {
-        const oldFilePath = path.join(uploadsDir, oldPolicy.document_path);
-        if (fs.existsSync(oldFilePath)) {
-          fs.unlinkSync(oldFilePath);
+        try {
+          const fileNameWithEncoding = oldPolicy.document_path.split('/').pop().split('?')[0];
+          const oldFileName = decodeURIComponent(fileNameWithEncoding);
+          await bucket.file(oldFileName).delete();
+          console.log(`Documento de política antiguo ${oldFileName} eliminado de Firebase Storage.`);
+        } catch (deleteError) {
+          console.warn(`No se pudo eliminar el documento de política antiguo de Firebase Storage: ${deleteError.message}`);
         }
       }
-      documentPath = req.file.filename;
+      const fileName = `${uuidv4()}-${req.file.originalname}`;
+      const file = bucket.file(fileName);
+
+      await file.save(req.file.buffer, {
+        metadata: {
+          contentType: req.file.mimetype,
+        },
+        public: true,
+        resumable: false
+      });
+      documentPath = file.publicUrl();
     } else if (req.body.clearDocument === 'true') {
-      const oldPolicy = await Policy.findById(id);
       if (oldPolicy && oldPolicy.document_path) {
-        const oldFilePath = path.join(uploadsDir, oldPolicy.document_path);
-        if (fs.existsSync(oldFilePath)) {
-          fs.unlinkSync(oldFilePath);
+        try {
+          const fileNameWithEncoding = oldPolicy.document_path.split('/').pop().split('?')[0];
+          const oldFileName = decodeURIComponent(fileNameWithEncoding);
+          await bucket.file(oldFileName).delete();
+          console.log(`Documento de política ${oldFileName} eliminado de Firebase Storage.`);
+        } catch (deleteError) {
+          console.warn(`No se pudo eliminar el documento de política de Firebase Storage: ${deleteError.message}`);
         }
       }
       documentPath = null;
+    } else if (oldPolicy) {
+      documentPath = oldPolicy.document_path;
     }
 
     if (!title || !description || !category || !classification || !status) {
@@ -99,9 +132,13 @@ exports.deletePolicy = async (req, res) => {
     const documentPath = await Policy.delete(id);
 
     if (documentPath) {
-      const filePath = path.join(uploadsDir, documentPath);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      try {
+        const fileNameWithEncoding = documentPath.split('/').pop().split('?')[0];
+        const fileName = decodeURIComponent(fileNameWithEncoding);
+        await bucket.file(fileName).delete();
+        console.log(`Documento de política ${fileName} eliminado de Firebase Storage.`);
+      } catch (deleteError) {
+        console.warn(`No se pudo eliminar el documento de política de Firebase Storage: ${deleteError.message}`);
       }
     }
     res.status(204).send();

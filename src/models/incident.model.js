@@ -93,7 +93,7 @@ class Incident {
     const { rows } = await pool.query(query, values);
     return rows[0];
   }
- 
+  
 
   static async delete(id) {
     const query = `
@@ -102,7 +102,7 @@ class Incident {
       RETURNING evidence, help_documents;
     `;
     const { rows } = await pool.query(query, [id]);
-    return rows[0];  
+    return rows[0]; 
   }
 }
 

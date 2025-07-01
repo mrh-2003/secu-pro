@@ -33,7 +33,7 @@ class Policy {
       WHERE TRUE
     `;
     const values = [userId];
-    let paramIndex = 2;  
+    let paramIndex = 2; 
     if (searchTerm) {
       query += ` AND (LOWER(p.title) LIKE $${paramIndex} OR LOWER(p.description) LIKE $${paramIndex})`;
       values.push(`%${searchTerm.toLowerCase()}%`);

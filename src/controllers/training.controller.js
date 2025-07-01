@@ -1,18 +1,27 @@
-const Training = require('../models/training.model'); 
+const Training = require('../models/training.model');
+const bucket = require('../config/firebase.config');
+const { v4: uuidv4 } = require('uuid');
+
 exports.createCourse = async (req, res) => {
   try {
     const { policy_id, title, description, material_type, order_in_policy, questions_data } = req.body;
-
-    console.log(policy_id, title, description, material_type, order_in_policy, questions_data);
-    
-
 
     let materialLink = null;
 
     if (material_type === 'video') {
       materialLink = req.body.material_link;
     } else if (req.file) {
-      materialLink = req.file.filename;
+      const fileName = `${uuidv4()}-${req.file.originalname}`;
+      const file = bucket.file(fileName);
+
+      await file.save(req.file.buffer, {
+        metadata: {
+          contentType: req.file.mimetype,
+        },
+        public: true,
+        resumable: false
+      });
+      materialLink = file.publicUrl();
     }
 
     if (!title || !description || !material_type || !order_in_policy) {
@@ -21,7 +30,6 @@ exports.createCourse = async (req, res) => {
     
     const finalPolicyId = policy_id ? parseInt(policy_id) : null;
     const finalOrderInPolicy = parseInt(order_in_policy);
-
 
     const newCourse = await Training.createCourse({
       policy_id: finalPolicyId,

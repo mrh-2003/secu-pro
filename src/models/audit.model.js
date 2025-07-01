@@ -73,7 +73,7 @@ class Audit {
     const { rows } = await pool.query(query, [id]);
     return rows[0] ? rows[0].final_report_path : null;
   }
- 
+  
   static async getEvaluatedPolicies(auditId) {
     const query = `
       SELECT
@@ -84,7 +84,7 @@ class Audit {
         p.id_policy,
         p.title AS policy_title,
         p.iso_clause,
-        p.status AS policy_status -- Estado de la política en sí
+        p.status AS policy_status
       FROM audit_policy_evaluations ape
       JOIN policies p ON ape.policy_id = p.id_policy
       WHERE ape.audit_id = $1

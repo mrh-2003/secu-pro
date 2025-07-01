@@ -1,9 +1,7 @@
 const Incident = require("../models/incident.model");
-const User = require("../models/user.model");  
-const fs = require("fs");
-const path = require("path");
-
-const uploadsDir = path.join("uploads");
+const User = require("../models/user.model");
+const bucket = require('../config/firebase.config');
+const { v4: uuidv4 } = require('uuid');
 
 exports.createIncident = async (req, res) => {
   try {
@@ -15,14 +13,28 @@ exports.createIncident = async (req, res) => {
       additional_message,
       assigned_to_id,
     } = req.body;
-    const evidencePath = req.file ? req.file.filename : null;
+    let evidencePath = null;
 
     if (!incident_type || !description || !priority) {
       return res
         .status(400)
         .json({ message: "Tipo, descripción y prioridad son obligatorios." });
     }
- 
+
+    if (req.file) {
+      const fileName = `${uuidv4()}-${req.file.originalname}`;
+      const file = bucket.file(fileName);
+
+      await file.save(req.file.buffer, {
+        metadata: {
+          contentType: req.file.mimetype,
+        },
+        public: true,
+        resumable: false
+      });
+      evidencePath = file.publicUrl();
+    }
+
     const assignedTo = assigned_to_id ? parseInt(assigned_to_id) : null;
 
     const newIncident = await Incident.create({
@@ -87,34 +99,50 @@ exports.updateIncidentSolution = async (req, res) => {
     const { id } = req.params;
     const { solution, help_links, assigned_to_id, status } = req.body;
     let helpDocumentsPath = req.body.help_documents_path;
-    console.log(helpDocumentsPath);
- 
-    if (req.file) { 
-      const oldIncident = await Incident.findById(id);
+
+    const oldIncident = await Incident.findById(id);
+
+    if (req.file) {
       if (oldIncident && oldIncident.help_documents) {
-        const oldFilePath = path.join(uploadsDir, oldIncident.help_documents);
-        if (fs.existsSync(oldFilePath)) {
-          fs.unlinkSync(oldFilePath);
+        try {
+          const fileNameWithEncoding = oldIncident.help_documents.split('/').pop().split('?')[0];
+          const oldFileName = decodeURIComponent(fileNameWithEncoding);
+          await bucket.file(oldFileName).delete();
+          console.log(`Documento de ayuda antiguo ${oldFileName} eliminado de Firebase Storage.`);
+        } catch (deleteError) {
+          console.warn(`No se pudo eliminar el documento de ayuda antiguo de Firebase Storage: ${deleteError.message}`);
         }
       }
-      helpDocumentsPath = req.file.filename;
-    } else if (req.body.clearHelpDocument === "true") { 
-      const oldIncident = await Incident.findById(id);
+
+      const fileName = `${uuidv4()}-${req.file.originalname}`;
+      const file = bucket.file(fileName);
+
+      await file.save(req.file.buffer, {
+        metadata: {
+          contentType: req.file.mimetype,
+        },
+        public: true,
+        resumable: false
+      });
+      helpDocumentsPath = file.publicUrl();
+    } else if (req.body.clearHelpDocument === "true") {
       if (oldIncident && oldIncident.help_documents) {
-        const oldFilePath = path.join(uploadsDir, oldIncident.help_documents);
-        if (fs.existsSync(oldFilePath)) {
-          fs.unlinkSync(oldFilePath);
+        try {
+          const fileNameWithEncoding = oldIncident.help_documents.split('/').pop().split('?')[0];
+          const oldFileName = decodeURIComponent(fileNameWithEncoding);
+          await bucket.file(oldFileName).delete();
+          console.log(`Documento de ayuda ${oldFileName} eliminado de Firebase Storage.`);
+        } catch (deleteError) {
+          console.warn(`No se pudo eliminar el documento de ayuda de Firebase Storage: ${deleteError.message}`);
         }
       }
       helpDocumentsPath = null;
-    } else {
-      const currentIncident = await Incident.findById(id);
-      helpDocumentsPath = currentIncident
-        ? currentIncident.help_documents
-        : null;
-    } 
+    } else if (oldIncident) {
+      helpDocumentsPath = oldIncident.help_documents;
+    }
+
     const validStatuses = ["Abierto", "Cerrado"];
-    if (!status || !validStatuses.includes(status)) { 
+    if (!status || !validStatuses.includes(status)) {
       return res
         .status(400)
         .json({
@@ -122,10 +150,10 @@ exports.updateIncidentSolution = async (req, res) => {
             'El estado del incidente es inválido. Debe ser "Abierto" o "Cerrado".',
         });
     }
- 
+
     let parsedHelpLinks = null;
     if (help_links) {
-      try { 
+      try {
         const linksArray = JSON.parse(help_links);
         if (
           Array.isArray(linksArray) &&
@@ -133,7 +161,7 @@ exports.updateIncidentSolution = async (req, res) => {
         ) {
           parsedHelpLinks = JSON.stringify(
             linksArray.filter((link) => link.trim() !== "")
-          ); 
+          );
         } else {
           console.warn(
             "Help_links no es un array de strings válido o no pudo ser parseado. Se establecerá a null."
@@ -151,10 +179,10 @@ exports.updateIncidentSolution = async (req, res) => {
 
     const updatedIncident = await Incident.updateSolution(id, {
       solution,
-      help_links: parsedHelpLinks, 
+      help_links: parsedHelpLinks,
       help_documents: helpDocumentsPath,
       assigned_to: assigned_to_id ? parseInt(assigned_to_id) : null,
-      status: status,  
+      status: status,
     });
 
     if (!updatedIncident) {
@@ -170,25 +198,31 @@ exports.updateIncidentSolution = async (req, res) => {
       .json({ message: "Error interno del servidor al actualizar solución." });
   }
 };
+
 exports.deleteIncident = async (req, res) => {
   try {
     const { id } = req.params;
-    const deletedPaths = await Incident.delete(id);  
+    const deletedPaths = await Incident.delete(id);
 
     if (deletedPaths) {
       if (deletedPaths.evidence) {
-        const evidenceFilePath = path.join(uploadsDir, deletedPaths.evidence);
-        if (fs.existsSync(evidenceFilePath)) {
-          fs.unlinkSync(evidenceFilePath);
+        try {
+          const fileNameWithEncoding = deletedPaths.evidence.split('/').pop().split('?')[0];
+          const fileName = decodeURIComponent(fileNameWithEncoding);
+          await bucket.file(fileName).delete();
+          console.log(`Evidencia ${fileName} eliminada de Firebase Storage.`);
+        } catch (deleteError) {
+          console.warn(`No se pudo eliminar la evidencia de Firebase Storage: ${deleteError.message}`);
         }
       }
       if (deletedPaths.help_documents) {
-        const helpDocsFilePath = path.join(
-          uploadsDir,
-          deletedPaths.help_documents
-        );
-        if (fs.existsSync(helpDocsFilePath)) {
-          fs.unlinkSync(helpDocsFilePath);
+        try {
+          const fileNameWithEncoding = deletedPaths.help_documents.split('/').pop().split('?')[0];
+          const fileName = decodeURIComponent(fileNameWithEncoding);
+          await bucket.file(fileName).delete();
+          console.log(`Documento de ayuda ${fileName} eliminado de Firebase Storage.`);
+        } catch (deleteError) {
+          console.warn(`No se pudo eliminar el documento de ayuda de Firebase Storage: ${deleteError.message}`);
         }
       }
     }
@@ -200,10 +234,10 @@ exports.deleteIncident = async (req, res) => {
       .json({ message: "Error interno del servidor al eliminar incidente." });
   }
 };
- 
+
 exports.getEmployeesForAssignment = async (req, res) => {
   try {
-    const employees = await User.findAll();  
+    const employees = await User.findAll();
     const assignableEmployees = employees.filter(
       (user) => user.role === "Empleado"
     );

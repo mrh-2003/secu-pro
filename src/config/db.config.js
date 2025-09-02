@@ -2,13 +2,9 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  database: process.env.DB_NAME,
+  host: `/cloudsql/${process.env.INSTANCE_CONNECTION_NAME}`,
 });
 
 module.exports = pool;
